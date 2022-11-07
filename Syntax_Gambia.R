@@ -7,6 +7,7 @@ library(expss)
 library(openxlsx)
 library(writexl)
 library(labelled)
+library(readxl)
 
 # import dataset ----------------------------------------------------------
 dataset_GMB <- read_sav("Gambia_weight_and_calculation.sav")
@@ -84,11 +85,113 @@ test9 <- test9 %>% mutate_if(
   is.numeric, round, 1
 )
 
-test10 <- as.data.frame(test8)
+test9 <- dataset_GMB %>% 
+  cross_rpct(ADMIN1Name,list(FCSCat28,HDDS_CH,HHhS_CH,LhCSICat,rCSI_CH,shock_6M,shock_1,
+                             Foodexp_4pt), total_row_position = "none",
+             weight = Weight) 
+
+
+test10 <- as.data.frame(test9)
 test10 <- test10 %>% mutate_if(
   is.numeric, round, 1
 )
 
+
+# Price data --------------------------------------------------------------
+
+path <- "GAMIS 2022 Market Price by region.xlsx"
+
+
+price_data <- path %>%
+  excel_sheets() %>% 
+  map_df(read_excel,
+         path = path)
+
+cereals <- c("Maize", "Millet","Sorghum", "Broken Rice","Beans","Undecorticated G/nut","	
+Decorticated G/Nut")
+
+price_data <- price_data %>% filter(
+  CEREALS %in% cereals
+)
+
+price_data2yearly <- price_data %>% select(ADMIN1Name, CEREALS,
+                                           `% Changes`) %>% pivot_wider(
+    names_from = CEREALS, values_from = `% Changes`
+) %>% mutate_if(is.numeric, round, 2)
+
+names(price_data2yearly)[2:7] <- paste0("45_annual_variation_",names(price_data2yearly)[2:7])
+
+price_data25year <-  price_data %>% select(ADMIN1Name, CEREALS,
+                                                               `% Diff. 2022 compared to 5 years avg`) %>% pivot_wider(
+                                                                 names_from = CEREALS, values_from = `% Diff. 2022 compared to 5 years avg`) %>% 
+  mutate_if(is.numeric, round, 2)
+
+names(price_data25year)[2:7] <- paste0("46_Five_year_variation_",names(price_data25year)[2:7])
+
+final_price_data <- price_data2yearly %>% left_join(price_data25year, by = "ADMIN1Name")
+
+matrice <- read_xlsx("Matrice_intermediaire.xlsx")
+names(matrice)[33:50] <- paste0("02_",names(matrice)[33:50])
+names(matrice)[51:54] <- paste0("47_",names(matrice)[51:54])
+
+setdiff(matrice$ADMIN1Name, final_price_data$ADMIN1Name)
+setdiff(final_price_data$ADMIN1Name, matrice$ADMIN1Name)
+
+# production
+path2 <- "2022 Regional Production data Forecast.xlsx"
+
+
+production_data <- path2 %>%
+  excel_sheets() %>% 
+  map_df(read_excel,
+         path = path2)
+
+production_data <- production_data %>% select(
+  -c(`5yr.Aver`)
+)
+
+production_datayearly <- production_data %>% select(c(- `% Change 2022-5yr.avg`)) %>%  pivot_wider(
+  names_from = Years , values_from = `% Change 2022-2021`
+)
+
+# join
+matrice_final <- matrice %>% left_join(final_price_data, by = "ADMIN1Name")
+write_xlsx(matrice_final, "matrice_final.xlsx")
+
+names(production_datayearly)[2:10] <- paste("15_difference Annual production",names(production_datayearly)[2:10])
+# 5 year
+production_datafiveyear <- production_data %>% select(c(- `% Change 2022-2021`)) %>%  pivot_wider(
+  names_from = Years , values_from = `% Change 2022-5yr.avg`
+)
+
+
+names(production_datafiveyear)[2:10] <- paste("16_difference five year production",names(production_datafiveyear)[2:10])
+production_datayearly <- production_datayearly %>% select(-c(`15_ Total Cash`))
+production_datafiveyear <- production_datafiveyear %>% select(-c(`16_ Total Cash`))
+
+final_production_data <- production_datayearly %>% left_join(production_datafiveyear, by = "ADMIN1Name")
+# join production and matrice
+setdiff(matrice$ADMIN1Name,final_production_data$ADMIN1Name)
+setdiff(final_production_data$ADMIN1Name, matrice$ADMIN1Name)
+
+matrice_final <- matrice %>% left_join(final_production_data, by = "ADMIN1Name" )
+write_xlsx(matrice_final, "Matrice_final_gmb.xlsx")
+
+# trade
+trade <- read_xlsx("term_of_trade.xlsx")
+
+trade <- trade %>% mutate(
+  `Variations TOT` = 100 * `Variations TOT`
+) %>% mutate_if(is.numeric, round, 1)
+
+trade_final <- trade %>% pivot_wider(
+  names_from = Procuct, values_from = `Variations TOT`
+)
+
+names(trade_final)[2:4] <- paste0("48_Terms of trade ",names(trade_final)[2:4])
+
+matrice_final <- matrice_final %>% left_join(trade_final, by = "ADMIN1Name")
+write_xlsx(matrice_final, "Matrice_final_gmb.xlsx")
 
 # saving ------------------------------------------------------------------
 wb <- createWorkbook()
