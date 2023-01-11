@@ -8,6 +8,7 @@ library(openxlsx)
 library(writexl)
 library(labelled)
 library(readxl)
+library(tidyverse)
 
 # import dataset ----------------------------------------------------------
 dataset_GMB <- read_sav("Gambia_weight_and_calculation.sav")
@@ -86,16 +87,25 @@ test9 <- test9 %>% mutate_if(
 )
 
 test9 <- dataset_GMB %>% 
-  cross_rpct(ADMIN1Name,list(FCSCat28,HDDS_CH,HHhS_CH,LhCSICat,rCSI_CH,shock_6M,shock_1,
-                             Foodexp_4pt), total_row_position = "none",
-             weight = Weight) 
+  cross_rpct(ADMIN2Name,list(FCSCat28,HDDS_CH,HHhS_CH,LhCSICat,rCSI_CH), total_row_position = "none",
+             weight = Weight)
+test9 <- test9 |> separate(
+  row_labels, c("modalite", "ADMIN2Name", sep = "|")
+)
 
+test9 <- as.data.frame(test9)
+test9$row_labels <- str_replace_all(test9$row_labels,pattern = ".*\\|", replacement = "")
+test10 <- test9 |> mutate(
+  ADMIN1Name = maditr::vlookup(lookup_value = row_labels,dict = dataset_GMB,lookup_column = "ADMIN2Name",result_column ="ADMIN1Name")
+)  |> relocate(ADMIN1Name, .before = row_labels) |> rename( ADMIN2Name =  row_labels  ) |> mutate_if(is.numeric, round,1)
 
 test10 <- as.data.frame(test9)
 test10 <- test10 %>% mutate_if(
   is.numeric, round, 1
 )
 
+testidi <- dataset_GMB |> cross_rpct(cell_vars = ADMIN2Name,col_vars = list(FCSCat28,HDDS_CH,HHhS_CH,LhCSICat,rCSI_CH,shock_6M,shock_1,
+                                                                            Foodexp_4pt), total_row_position = "none",row_vars = ADMIN1Name)
 
 # Price data --------------------------------------------------------------
 
@@ -157,6 +167,8 @@ production_datayearly <- production_data %>% select(c(- `% Change 2022-5yr.avg`)
 # join
 matrice_final <- matrice %>% left_join(final_price_data, by = "ADMIN1Name")
 write_xlsx(matrice_final, "matrice_final.xlsx")
+write_xlsx(price_data25year, "price5year_final.xlsx")
+
 
 names(production_datayearly)[2:10] <- paste("15_difference Annual production",names(production_datayearly)[2:10])
 # 5 year
@@ -202,5 +214,20 @@ xl_write(test10, wb, sh)
 saveWorkbook(wb, "Matrice_intermediaire_Gambia.xlsx", overwrite = TRUE)
 
 # end of syntaxe ----------------------------------------------------------
-
-
+sockts <- data.frame(
+                   stringsAsFactors = FALSE,
+                        check.names = FALSE,
+                              Annee = c(2022L, 2021L, 2023L),
+         `105_Stocks_ALL.RICE.(MT)` = c("44 973", "53 511", "-16.0"),
+            `105_Stocks_SUGAR.(MT)` = c("12 185", "16 061", "-24.1"),
+            `105_Stocks_FLOUR.(MT)` = c("1 876", "1 023", "83.4"),
+     `105_Stocks_EDIBLE.OIL.(LTRS)` = c("759 056", "625 360", "21.4"),
+          `105_Stocks_ONION.(BAGS)` = c("55 959", "37 740", "48.3"),
+         `105_Stocks_POTATO.(BAGS)` = c("29 159", "36 236", "-19.5"),
+  `105_Stocks_WHOLE.CHICKEN.(CTNS)` = c("35 465", "53 037", "-33.1"),
+    `105_Stocks_CHICKEN.LEGS(CTNS)` = c("149 717", "70 832", "111.4"),
+          `105_Stocks_CEMENT.(MTS)` = c("34 078", "9 021", "277.8")
+          )
+variation_stocks <- sockts %>% filter(Annee == 2023)
+names(variation_stocks) <- str_replace(names(variation_stocks), "105_","49_Variation_")
+writexl::write_xlsx(variation_stocks, "variation_stocks.xlsx")
